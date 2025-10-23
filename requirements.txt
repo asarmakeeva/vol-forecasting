@@ -11,5 +11,3 @@ pyarrow
 yfinance
 torch
 pytorch-lightning
-tqdm
-vectorbtpro ;

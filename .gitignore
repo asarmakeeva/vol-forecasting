@@ -1,0 +1,86 @@
+# -----------------------------
+# Python
+# -----------------------------
+__pycache__/
+*.py[cod]
+*.so
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+*.log
+
+# Byte-compiled / optimized files
+*.pyc
+*.pyo
+*.pyd
+*$py.class
+
+# -----------------------------
+# Virtual environments
+# -----------------------------
+finance/
+.ipynb_checkpoints/
+testing_ground.ipynb
+
+# -----------------------------
+# Jupyter / VS Code / IDE stuff
+# -----------------------------
+.ipynb_checkpoints/
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# -----------------------------
+# Data files (local only)
+# -----------------------------
+data/raw/
+data/processed/
+data/interim/
+!data/.gitkeep
+
+# If you want to version configs but not outputs:
+configs/*.yaml
+
+# -----------------------------
+# Reports / Results
+# -----------------------------
+reports/
+notebooks/.ipynb_checkpoints/
+*.html
+*.pdf
+*.png
+*.csv
+*.xlsx
+*.h5
+*.pkl
+*.joblib
+
+# -----------------------------
+# Build / distribution artifacts
+# -----------------------------
+build/
+dist/
+*.manifest
+*.spec
+
+# -----------------------------
+# OS and editor junk
+# -----------------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# -----------------------------
+# Test artifacts
+# -----------------------------
+.coverage
+htmlcov/
+.pytest_cache/
+.cache/
