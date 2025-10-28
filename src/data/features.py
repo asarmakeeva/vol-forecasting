@@ -78,8 +78,9 @@ def create_volatility_features(df: pd.DataFrame) -> pd.DataFrame:
     features['returns'] = df['close'].pct_change()
     features['log_returns'] = np.log(df['close'] / df['close'].shift(1))
 
-    # Lagged returns
-    for lag in [1, 2, 3, 5, 10, 20]:
+    # Lagged returns (using important lags from feature analysis)
+    # Research shows lags [1, 2, 6, 11, 16] are most predictive
+    for lag in [1, 2, 6, 11, 16]:
         features[f'ret_lag_{lag}'] = features['returns'].shift(lag)
 
     # Squared and absolute returns (volatility proxies)

@@ -1,81 +1,111 @@
-# Volatility Forecasting: GARCH vs LSTM/Transformer
+# Volatility Forecasting: GARCH vs LSTM
 
+Comprehensive comparison of classical GARCH models and deep learning LSTM for financial volatility forecasting.
 
-**Key Results (SPY, 2015–2024; daily):**
-- **Sharpe (Vol-Target, Net):** LSTM 1.32 · Transformer 1.28 · EGARCH 1.05 · GARCH 0.98 · Buy&Hold 0.82
-- **Forecast Loss (QLIKE ↓):** LSTM 0.412 · Transformer 0.418 · EGARCH 0.455 · GARCH 0.471
-- **Max Drawdown:** LSTM −17% · Transformer −18% · EGARCH −22% · GARCH −24% · Buy&Hold −34%
+## 📊 Key Results (SPY, 2015-2024)
 
+| Model | QLIKE ↓ | Sharpe ↑ | Max DD |
+|-------|---------|----------|--------|
+| **LSTM** | **0.412** | **1.32** | -17% |
+| EGARCH | 0.455 | 1.05 | -22% |
+| GARCH | 0.471 | 0.98 | -24% |
+| Buy&Hold | - | 0.82 | -34% |
 
-> Reproduce: `make data && make features && make train-garch && make train-lstm && make backtest && make report`
+**LSTM achieves ~10% better forecast accuracy and +0.30 Sharpe improvement**
 
+---
 
-## Problem Statement
-Forecast 1‑day‑ahead volatility and use it to size risk via a simple vol‑targeting strategy. Compare classical (GARCH/EGARCH) and deep models (LSTM/Transformer).
+## 🚀 Quick Start
 
-
-## Data
-- Daily OHLCV from Yahoo Finance.
-- Realized volatility from intraday bars when available; otherwise GK/PK as proxies. See `data/` notes.
-
-
-## Methods
-- Walk‑forward evaluation (monthly step, 3y training window).
-- Models: GARCH(1,1), EGARCH(1,1), LSTM, Transformer.
-- Losses: RMSE, MAE, QLIKE; calibration via Mincer–Zarnowitz.
-
-
-## Strategy
-- Daily vol targeting at 10% annualized; 5 bps trading cost; 1 bp slippage; leverage capped at 2×.
-
-
-## Regime Analysis
-- **2020 COVID Crash:** Deep models adapted faster to volatility spikes; GARCH under‑reacted for ~1–2 weeks.
-- **2022 Rate Hikes:** Structural persistence favored EGARCH; transformers benefited from regime features (VIX buckets).
-
-
-## Limitations
-- Intraday RV limited by data access; GK/PK proxies introduce bias.
-- Overfitting risk for DL mitigated with walk‑forward and early stopping.
-
-
-## How to Run
-
-### Quick Start: GARCH vs LSTM Comparison
-
-Compare GARCH and LSTM models in one command:
 ```bash
+# Install
+pip install -r requirements.txt
+
+# Run comparison (15-30 min)
+make compare
+
+# Or directly
 python compare_garch_lstm.py SPY 2015-01-01 2024-10-28
 ```
 
-This will:
-1. Download data from Yahoo Finance
-2. Generate GARCH forecasts (GARCH, EGARCH)
-3. Train LSTM model and generate forecasts
-4. Compare forecast accuracy (RMSE, MAE, QLIKE, R²)
-5. Run volatility targeting backtests
-6. Generate comparison plots
+---
 
-### Individual Model Research
+## 📁 Project Structure
 
-**GARCH Models Only:**
-```bash
-python run_garch_research.py SPY 2015-01-01 2024-10-28
+```
+vol-forecasting/
+├── compare_garch_lstm.py         # Main comparison script ⭐
+├── Makefile                       # Convenient commands
+├── data/
+│   ├── raw/                       # Downloaded OHLCV
+│   └── processed/                 # Features + targets
+├── notebooks/
+│   ├── 02_garch_baselines.ipynb  # ✓ Complete GARCH research
+│   └── README.md                  # Notebook descriptions
+├── src/
+│   ├── config.py                  # Configuration
+│   ├── data/                      # Data processing
+│   ├── models/                    # GARCH, LSTM, Transformer
+│   ├── eval/                      # Metrics, plots, backtest
+│   ├── utils/                     # Timesplits, I/O
+│   └── research/                  # Analysis tools
+└── tests/                         # Unit tests
 ```
 
-**Interactive Notebooks:**
+---
+
+## 💻 Usage
+
 ```bash
-jupyter notebook research_garch_volatility.ipynb
+make help          # Show all commands
+make compare       # Run GARCH vs LSTM comparison
+make notebooks     # Launch Jupyter notebooks
+make test          # Run tests
 ```
 
-### Advanced: Make-based Pipeline
-- `make install`
-- `make data` → `make features` → `make train-garch` → `make train-lstm` → `make backtest` → `make report`
+**Try other assets:**
+```bash
+python compare_garch_lstm.py QQQ 2015-01-01 2024-10-28
+python compare_garch_lstm.py GLD 2015-01-01 2024-10-28
+```
 
+---
 
-## Folder Map
-See repository tree in this README.
+## 🔬 Methodology
 
+- **Walk-forward validation** (expanding window, monthly refit)
+- **Important lags**: [1, 2, 6, 11, 16] (from feature analysis)
+- **Evaluation**: RMSE, MAE, QLIKE, Diebold-Mariano test
+- **Backtest**: Vol-targeting (10% target, 6bps costs, 2x max leverage)
 
-## License
-MIT
+---
+
+## ⚙️ Configuration
+
+Edit `src/config.py`:
+```python
+IMPORTANT_LAGS = [1, 2, 6, 11, 16]
+GARCH_MODELS = ['garch', 'egarch']
+LSTM_SEQ_LEN = 30
+VOL_TARGET = 0.10
+```
+
+---
+
+## 📚 Key Findings
+
+**Use GARCH when:**
+- Limited data (< 2 years)
+- Need interpretability
+- Stable markets
+
+**Use LSTM when:**
+- Large dataset (3+ years)
+- Regime changes frequent
+- Multiple data sources
+
+---
+
+## 📄 License
+
+MIT License
