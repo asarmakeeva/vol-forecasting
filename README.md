@@ -40,6 +40,35 @@ Forecast 1‑day‑ahead volatility and use it to size risk via a simple vol‑t
 
 
 ## How to Run
+
+### Quick Start: GARCH vs LSTM Comparison
+
+Compare GARCH and LSTM models in one command:
+```bash
+python compare_garch_lstm.py SPY 2015-01-01 2024-10-28
+```
+
+This will:
+1. Download data from Yahoo Finance
+2. Generate GARCH forecasts (GARCH, EGARCH)
+3. Train LSTM model and generate forecasts
+4. Compare forecast accuracy (RMSE, MAE, QLIKE, R²)
+5. Run volatility targeting backtests
+6. Generate comparison plots
+
+### Individual Model Research
+
+**GARCH Models Only:**
+```bash
+python run_garch_research.py SPY 2015-01-01 2024-10-28
+```
+
+**Interactive Notebooks:**
+```bash
+jupyter notebook research_garch_volatility.ipynb
+```
+
+### Advanced: Make-based Pipeline
 - `make install`
 - `make data` → `make features` → `make train-garch` → `make train-lstm` → `make backtest` → `make report`
 
