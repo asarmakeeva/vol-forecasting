@@ -1,4 +1,3 @@
-# src/data/download.py
 import argparse, pathlib
 import pandas as pd
 import yfinance as yf
