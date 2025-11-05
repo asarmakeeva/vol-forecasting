@@ -219,7 +219,7 @@ def plot_scatter_comparison(actual: pd.Series, forecasts: Dict[str, pd.Series],
 
         # Statistics
         r2 = r_value ** 2
-        ax.text(0.05, 0.95, f'R² = {r2:.3f}\nSlope = {slope:.3f}',
+        ax.text(0.05, 0.95, f'Rï¿½ = {r2:.3f}\nSlope = {slope:.3f}',
                transform=ax.transAxes, verticalalignment='top',
                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 

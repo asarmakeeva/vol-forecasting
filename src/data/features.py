@@ -1,10 +1,16 @@
+import argparse
+import glob
+import json
+import os
+from pathlib import Path
+from typing import Dict, List, Tuple
+
 import numpy as np
 import pandas as pd
 from typing import List, Optional
 
 
 TRADING_DAYS = 252
-
 
 def garman_klass(df: pd.DataFrame) -> pd.Series:
     """
@@ -16,6 +22,8 @@ def garman_klass(df: pd.DataFrame) -> pd.Series:
     log_co = np.log(df['close']/df['open'])
     return 0.5*log_hl**2 - (2*np.log(2)-1)*log_co**2
 
+    per_ticker_paths = []
+    merged_frames = []
 
 def realized_vol_from_daily(df: pd.DataFrame, window: int = 5) -> pd.Series:
     """
@@ -25,6 +33,11 @@ def realized_vol_from_daily(df: pd.DataFrame, window: int = 5) -> pd.Series:
     """
     return np.sqrt(garman_klass(df).rolling(window).sum() * TRADING_DAYS)
 
+    # merged multi-ticker panel (optional but handy)
+    all_df = pd.concat(merged_frames, axis=0).sort_index()
+    all_out = out_dir / "all_tickers_features.parquet"
+    all_df.to_parquet(all_out)
+    print(f"[OK] Merged: {all_df.shape[0]} rows → {all_out}")
 
 def make_supervised(fr: pd.DataFrame, horizon: int = 1, seq_len: int = 30):
     """
