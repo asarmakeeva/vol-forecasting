@@ -7,15 +7,23 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
-#import yaml
+from typing import List, Optional
+
 
 TRADING_DAYS = 252
 
 def garman_klass(df: pd.DataFrame) -> pd.Series:
-    """Daily GK variance proxy (uses OHLC)."""
-    log_hl = np.log(df["high"] / df["low"])
-    log_co = np.log(df["close"] / df["open"])
-    return 0.5 * log_hl**2 - (2 * np.log(2) - 1) * log_co**2
+    """
+    Garman-Klass volatility estimator
+
+    Uses OHLC data to estimate volatility more efficiently than close-to-close.
+    """
+    log_hl = np.log(df['high']/df['low'])
+    log_co = np.log(df['close']/df['open'])
+    return 0.5*log_hl**2 - (2*np.log(2)-1)*log_co**2
+
+    per_ticker_paths = []
+    merged_frames = []
 
 def realized_vol_from_daily(df: pd.DataFrame, window: int = 5) -> pd.Series:
     """
@@ -25,135 +33,260 @@ def realized_vol_from_daily(df: pd.DataFrame, window: int = 5) -> pd.Series:
     """
     return np.sqrt(garman_klass(df).rolling(window).sum() * TRADING_DAYS)
 
-def realized_vol_proxy(df: pd.DataFrame, kind: str = "gk") -> pd.Series:
-    if kind.lower() == "gk":
-        var = garman_klass(df)
-    elif kind.lower() == "cc":  # close-to-close as fallback
-        ret = np.log(df["close"]).diff()
-        var = ret**2
-    else:
-        raise ValueError(f"Unknown realized_vol kind: {kind}")
-    # annualized sigma (sqrt of summed daily variance * 252)
-    return np.sqrt(var.rolling(5, min_periods=3).sum() * TRADING_DAYS)
-
-def add_har_features(s: pd.Series) -> pd.DataFrame:
-    """HAR-style lags of realized vol."""
-    out = pd.DataFrame(index=s.index)
-    out["rv_lag1"] = s.shift(1)
-    out["rv_lag5"] = s.rolling(5).mean().shift(1)
-    out["rv_lag22"] = s.rolling(22).mean().shift(1)
-    return out
-
-def add_calendar(df: pd.DataFrame) -> pd.DataFrame:
-    out = pd.DataFrame(index=df.index)
-    out["weekday"] = df.index.weekday
-    out["month"] = df.index.month
-    return out
-
-def build_features_for_ticker(path: Path, realized_vol: str, seq_len: int) -> Tuple[str, pd.DataFrame]:
-    """Read one parquet, build features/target frame for one ticker."""
-    ticker = path.stem.upper()
-    df = pd.read_parquet(path)  # expects columns: open, high, low, close, volume
-    df = df.sort_index()
-    # sanity: enforce lowercase columns
-    df.columns = [c.lower() for c in df.columns]
-
-    # returns
-    df["ret"] = df["close"].pct_change()
-    df["logret"] = np.log(df["close"]).diff()
-
-    # realized volatility target (proxy)
-    df["rv"] = realized_vol_proxy(df, realized_vol)
-
-    # HAR features on rv
-    har = add_har_features(df["rv"])
-
-    # simple rolling stats on returns
-    feats_ret = pd.DataFrame(index=df.index)
-    feats_ret["ret_1d"] = df["ret"].shift(1)
-    feats_ret["ret_5d"] = df["ret"].rolling(5).mean().shift(1)
-    feats_ret["ret_22d"] = df["ret"].rolling(22).mean().shift(1)
-    feats_ret["vol_22d"] = df["ret"].rolling(22).std().shift(1) * np.sqrt(TRADING_DAYS)
-
-    # calendar
-    cal = add_calendar(df)
-
-    # assemble
-    fr = pd.concat(
-        [
-            df[["open", "high", "low", "close", "volume"]],
-            df[["ret", "logret"]],
-            df[["rv"]].rename(columns={"rv": "rv_target"}),
-            har,
-            feats_ret,
-            cal,
-        ],
-        axis=1,
-    )
-
-    # drop rows that don't have enough history
-    fr = fr.dropna()
-
-    # add ticker column
-    fr["ticker"] = ticker
-    return ticker, fr
-
-def load_config(path: str) -> Dict:
-    with open(path, "r") as f:
-        if path.endswith(".yaml") or path.endswith(".yml"):
-            return yaml.safe_load(f)
-        return json.load(f)
-
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--config", type=str, default="configs/base.yaml")
-    # allow CLI override if no config present
-    ap.add_argument("--input_path", type=str, default=None)
-    ap.add_argument("--output_path", type=str, default=None)
-    ap.add_argument("--realized_vol", type=str, default=None)  # gk or cc
-    ap.add_argument("--seq_len", type=int, default=None)
-    ap.add_argument("--tickers", nargs="*", default=None)
-    args = ap.parse_args()
-
-    cfg = {}
-    if os.path.exists(args.config):
-        cfg = load_config(args.config)
-
-    input_path = args.input_path or cfg.get("input_path", "data/raw/daily")
-    output_path = args.output_path or cfg.get("output_path", "data/processed")
-    realized_vol = (args.realized_vol or cfg.get("realized_vol", "gk")).lower()
-    seq_len = args.seq_len or int(cfg.get("seq_len", 30))
-    tickers_cfg = cfg.get("tickers", None)
-    tickers = [t.upper() for t in (args.tickers or tickers_cfg or [])]
-
-    input_dir = Path(input_path)
-    out_dir = Path(output_path)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    # select files
-    files = sorted(glob.glob(str(input_dir / "*.parquet")))
-    if tickers:
-        files = [str(input_dir / f"{t}.parquet") for t in tickers if (input_dir / f"{t}.parquet").exists()]
-    if not files:
-        raise FileNotFoundError(f"No parquet files found under {input_dir}")
-
-    per_ticker_paths = []
-    merged_frames = []
-
-    for f in files:
-        tkr, fr = build_features_for_ticker(Path(f), realized_vol, seq_len)
-        # save per-ticker features
-        out_file = out_dir / f"{tkr}_features.parquet"
-        fr.to_parquet(out_file)
-        per_ticker_paths.append(out_file)
-        merged_frames.append(fr.assign(ticker=tkr))
-        print(f"[OK] {tkr}: {fr.shape[0]} rows → {out_file}")
-
     # merged multi-ticker panel (optional but handy)
     all_df = pd.concat(merged_frames, axis=0).sort_index()
     all_out = out_dir / "all_tickers_features.parquet"
     all_df.to_parquet(all_out)
     print(f"[OK] Merged: {all_df.shape[0]} rows → {all_out}")
 
+def make_supervised(fr: pd.DataFrame, horizon: int = 1, seq_len: int = 30):
+    """
+    Create supervised learning dataset for DL models
+
+    Parameters:
+    -----------
+    fr : pd.DataFrame
+        Feature DataFrame with 'rv' column
+    horizon : int
+        Forecast horizon
+    seq_len : int
+        Sequence length for LSTM
+
+    Returns:
+    --------
+    X : pd.DataFrame
+        Features
+    y : pd.Series
+        Targets (shifted realized volatility)
+    """
+    y = fr['rv'].shift(-horizon)
+    X_cols = [c for c in fr.columns if c != 'rv']
+    return fr[X_cols], y
+
+
+def create_volatility_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create comprehensive features for volatility forecasting
+
+    Features include:
+    - Returns at multiple horizons
+    - Rolling volatilities
+    - Volume-based features
+    - Momentum indicators
+    - Garman-Klass volatility
+
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        OHLCV data
+
+    Returns:
+    --------
+    pd.DataFrame
+        Feature DataFrame
+    """
+    features = pd.DataFrame(index=df.index)
+
+    # Returns
+    features['returns'] = df['close'].pct_change()
+    features['log_returns'] = np.log(df['close'] / df['close'].shift(1))
+
+    # Lagged returns (using important lags from feature analysis)
+    # Research shows lags [1, 2, 6, 11, 16] are most predictive
+    for lag in [1, 2, 6, 11, 16]:
+        features[f'ret_lag_{lag}'] = features['returns'].shift(lag)
+
+    # Squared and absolute returns (volatility proxies)
+    features['returns_sq'] = features['returns'] ** 2
+    features['returns_abs'] = features['returns'].abs()
+
+    # Rolling volatility at different windows
+    for window in [5, 10, 20, 60]:
+        features[f'vol_{window}d'] = features['returns'].rolling(window).std() * np.sqrt(TRADING_DAYS)
+
+    # Garman-Klass volatility
+    features['gk_vol'] = np.sqrt(garman_klass(df) * TRADING_DAYS)
+
+    # Rolling Garman-Klass
+    for window in [5, 10, 20]:
+        features[f'gk_vol_{window}d'] = np.sqrt(
+            garman_klass(df).rolling(window).mean() * TRADING_DAYS
+        )
+
+    # Parkinson volatility (high-low range)
+    features['parkinson'] = np.sqrt(
+        (1 / (4 * np.log(2))) * (np.log(df['high'] / df['low'])) ** 2 * TRADING_DAYS
+    )
+
+    # Volume features (if available)
+    if 'volume' in df.columns:
+        features['volume'] = df['volume']
+        features['volume_chg'] = df['volume'].pct_change()
+
+        # Volume-weighted metrics
+        features['vwap'] = (df['close'] * df['volume']).rolling(20).sum() / df['volume'].rolling(20).sum()
+        features['price_to_vwap'] = df['close'] / features['vwap']
+
+        # Normalized volume
+        features['volume_norm'] = df['volume'] / df['volume'].rolling(60).mean()
+
+    # Price-based features
+    features['high_low_range'] = (df['high'] - df['low']) / df['close']
+    features['close_open_chg'] = (df['close'] - df['open']) / df['open']
+
+    # Momentum indicators
+    features['rsi_14'] = compute_rsi(df['close'], window=14)
+
+    # Moving averages
+    for window in [10, 20, 50]:
+        ma = df['close'].rolling(window).mean()
+        features[f'price_to_ma{window}'] = df['close'] / ma
+
+    # Trend indicators
+    features['trend_20'] = (df['close'] - df['close'].shift(20)) / df['close'].shift(20)
+
+    # EWMA volatility
+    for halflife in [5, 10, 20]:
+        features[f'ewma_vol_{halflife}'] = (
+            features['returns'].ewm(halflife=halflife).std() * np.sqrt(TRADING_DAYS)
+        )
+
+    # Realized volatility (target)
+    features['rv'] = realized_vol_from_daily(df)
+
+    return features.dropna()
+
+
+def compute_rsi(prices: pd.Series, window: int = 14) -> pd.Series:
+    """
+    Compute Relative Strength Index
+
+    Parameters:
+    -----------
+    prices : pd.Series
+        Price series
+    window : int
+        RSI window
+
+    Returns:
+    --------
+    pd.Series
+        RSI values (0-100)
+    """
+    delta = prices.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+
+    return rsi
+
+
+def select_lstm_features(features_df: pd.DataFrame,
+                        exclude_highly_correlated: bool = True,
+                        correlation_threshold: float = 0.95) -> List[str]:
+    """
+    Select relevant features for LSTM model
+
+    Parameters:
+    -----------
+    features_df : pd.DataFrame
+        Feature DataFrame
+    exclude_highly_correlated : bool
+        Remove highly correlated features
+    correlation_threshold : float
+        Correlation threshold for removal
+
+    Returns:
+    --------
+    list
+        Selected feature names
+    """
+    # Exclude target and NaN-heavy columns
+    exclude_cols = ['rv']
+    candidate_features = [c for c in features_df.columns if c not in exclude_cols]
+
+    # Remove columns with too many NaNs
+    valid_features = []
+    for col in candidate_features:
+        if features_df[col].isna().sum() / len(features_df) < 0.1:
+            valid_features.append(col)
+
+    if not exclude_highly_correlated:
+        return valid_features
+
+    # Remove highly correlated features
+    corr_matrix = features_df[valid_features].corr().abs()
+
+    # Find pairs of highly correlated features
+    upper_tri = corr_matrix.where(
+        np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+    )
+
+    to_drop = []
+    for column in upper_tri.columns:
+        if any(upper_tri[column] > correlation_threshold):
+            to_drop.append(column)
+
+    selected = [f for f in valid_features if f not in to_drop]
+
+    return selected
+
+
+def normalize_features(train_df: pd.DataFrame,
+                      test_df: pd.DataFrame,
+                      method: str = 'standardize') -> tuple:
+    """
+    Normalize features using training statistics
+
+    Parameters:
+    -----------
+    train_df : pd.DataFrame
+        Training features
+    test_df : pd.DataFrame
+        Test features
+    method : str
+        'standardize' (z-score) or 'minmax'
+
+    Returns:
+    --------
+    train_norm : pd.DataFrame
+        Normalized training features
+    test_norm : pd.DataFrame
+        Normalized test features
+    scaler_params : dict
+        Scaling parameters
+    """
+    if method == 'standardize':
+        mean = train_df.mean()
+        std = train_df.std()
+
+        train_norm = (train_df - mean) / (std + 1e-8)
+        test_norm = (test_df - mean) / (std + 1e-8)
+
+        scaler_params = {'mean': mean, 'std': std, 'method': 'standardize'}
+
+    elif method == 'minmax':
+        min_val = train_df.min()
+        max_val = train_df.max()
+
+        train_norm = (train_df - min_val) / (max_val - min_val + 1e-8)
+        test_norm = (test_df - min_val) / (max_val - min_val + 1e-8)
+
+        scaler_params = {'min': min_val, 'max': max_val, 'method': 'minmax'}
+    else:
+        raise ValueError(f"Unknown normalization method: {method}")
+
+    return train_norm, test_norm, scaler_params
+
+
 if __name__ == "__main__":
-    main()
+    print("Feature Engineering Module")
+    print("=" * 50)
+    print("\nAvailable functions:")
+    print("- garman_klass: Garman-Klass volatility estimator")
+    print("- realized_vol_from_daily: Realized vol proxy")
+    print("- create_volatility_features: Comprehensive feature creation")
+    print("- select_lstm_features: Feature selection for LSTM")
+    print("- normalize_features: Feature normalization")
