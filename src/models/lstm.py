@@ -103,8 +103,8 @@ class LSTMVolTrainer:
             self.optimizer,
             mode='min',
             factor=0.5,
-            patience=10,
-            verbose=False
+            patience=10
+            #verbose=False
         )
 
         self.history = {

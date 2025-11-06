@@ -38,7 +38,7 @@ from data.features import (
 
 # Evaluation
 from eval.metrics import qlike
-from eval.backtests import vol_target_weights, run_backtest
+from eval.backtest import vol_target_weights, run_backtest
 from eval.plots import (
     plot_volatility_comparison,
     plot_forecast_errors,
@@ -49,14 +49,31 @@ from eval.plots import (
 # Research analysis
 from research.garch_analysis import VolatilityComparison, stylized_facts_summary
 
-
 def load_data(ticker='SPY', start='2015-01-01', end='2024-10-28'):
-    """Load data from Yahoo Finance"""
     import yfinance as yf
     print(f"\nDownloading {ticker} data from {start} to {end}...")
 
-    df = yf.download(ticker, start=start, end=end, progress=False)
-    df.columns = [c.lower() for c in df.columns]
+    # Force columns grouped by field (not by ticker) to avoid MultiIndex;
+    # still handle MultiIndex defensively just in case.
+    df = yf.download(
+        ticker,
+        start=start,
+        end=end,
+        progress=False,
+        group_by='column',   # ensures Open/High/Low/Close/Adj Close/Volume
+        auto_adjust=False
+    )
+
+    # Flatten any MultiIndex columns
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    # Normalize names to lowercase strings
+    df.columns = [str(c).lower() for c in df.columns]
+
+    # Prefer 'close'; fall back to 'adj close' if needed
+    if 'close' not in df.columns and 'adj close' in df.columns:
+        df['close'] = df['adj close']
 
     # Basic features
     df['returns'] = df['close'].pct_change()
@@ -65,8 +82,9 @@ def load_data(ticker='SPY', start='2015-01-01', end='2024-10-28'):
     # Realized volatility
     df['rv'] = realized_vol_from_daily(df)
 
-    print(f"✓ Downloaded {len(df)} days of data\n")
+    print(f" Downloaded {len(df)} days of data\n")
     return df.dropna()
+
 
 
 def prepare_lstm_data(df_raw):
@@ -433,11 +451,11 @@ def main():
         improvement = lstm_sharpe - bh_sharpe
         print(f"   • Vol-targeting improves Sharpe by {improvement:.2f} vs Buy & Hold")
 
-    print(f"\n✓ Generated Figures:")
-    print(f"   • comparison_forecasts.png  - Forecast time series")
-    print(f"   • comparison_errors.png     - Forecast errors")
-    print(f"   • comparison_scatter.png    - Actual vs predicted")
-    print(f"   • comparison_backtests.png  - Backtest results")
+    # print(f"\n✓ Generated Figures:")
+    # print(f"   • comparison_forecasts.png  - Forecast time series")
+    # print(f"   • comparison_errors.png     - Forecast errors")
+    # print(f"   • comparison_scatter.png    - Actual vs predicted")
+    # print(f"   • comparison_backtests.png  - Backtest results")
 
     print("\n" + "=" * 80)
     print("COMPARISON COMPLETE")
